@@ -9,7 +9,11 @@ from io import BytesIO
 import plotly.express as px
 
 
-# 02 Extract Data
+# 02 Page Title
+st.title('スポット市場直近データ')
+
+
+# 03 Extract Data
 url = 'https://www.jepx.jp/_download.php'
 params = {'dir': 'spot_summary', 'file': 'spot_summary_2025.csv'}
 headers = {
@@ -22,21 +26,21 @@ csv_bytes = response.content
 df = pd.read_csv(BytesIO(csv_bytes), encoding='shift_jis')
 
 
-# 03 Data Cleaning
+# 04 Data Cleaning
 df['受渡日'] = pd.to_datetime(df['受渡日'])
 df['時刻'] = (df['時刻コード'] - 1) * 30
 df['時刻'] = pd.to_timedelta(df['時刻'], unit='m')
 df['受渡日時'] = df['受渡日'] + df['時刻']
 
 
-# # 04 Extract Only 7 Days Data
+# 05 Extract Only 7 Days Data
 end_date = df['受渡日'].max()
 start_date = end_date - pd.Timedelta(days=6)
 mask = (df['受渡日'] >= start_date) & (df['受渡日'] <= end_date)
 df7 = df.loc[mask].copy()
 
 
-# 05 User Can Select Areas
+# 06 User Can Select Areas
 area_map = {
     '北海道': 'エリアプライス北海道(円/kWh)',
     '東北':   'エリアプライス東北(円/kWh)',
