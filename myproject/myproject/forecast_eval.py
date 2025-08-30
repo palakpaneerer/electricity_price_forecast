@@ -3,13 +3,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+from pathlib import Path
 
 # 02 Page Title
 st.title('予測精度検証')
 
 # 03 Load
-df_mae_results = pd.read_parquet('./models/artifacts/df_mae_results.parquet')
-df_rmse_results = pd.read_parquet('./models/artifacts/df_rmse_results.parquet')
+BASE = Path(__file__).resolve().parent if '__file__' in globals() else Path.cwd()
+
+df_mae_results = pd.read_parquet('BASE/models/artifacts/df_mae_results.parquet')
+df_rmse_results = pd.read_parquet('BASE/models/artifacts/df_rmse_results.parquet')
 
 # 04 Def Heatmap 
 def make_heatmap(df: pd.DataFrame, title: str):
