@@ -12,8 +12,9 @@ with st.sidebar:
     selected = option_menu('Menu', ['ホーム',
                                     'スポット市場直近データ', 
                                     'スポット市場価格予測', 
-                                    '予測精度検証'], 
-        icons=['bi-house-door-fill', 'bi-database-fill-check', 'bi-graph-up', 'bi-file-earmark-check-fill'], 
+                                    '予測精度検証',
+                                    'ハイパーパラメーター'], 
+        icons=['bi-house-door-fill', 'bi-database-fill-check', 'bi-graph-up', 'bi-file-earmark-check-fill', 'bi-wrench-adjustable-circle-fill'], 
         menu_icon='cast', default_index=0)
 
 
@@ -33,3 +34,7 @@ elif selected == 'スポット市場価格予測':
     
 elif selected == '予測精度検証':
     exec(open(os.path.join(APP_DIR, 'forecast_eval.py'), encoding='utf-8').read())
+    
+elif selected == 'ハイパーパラメーター':
+    exec(open(os.path.join(APP_DIR, 'hyper_params.py'), encoding='utf-8').read())
+    
