@@ -7,6 +7,12 @@ import os
 
 # 02 Page Title
 st.title('予測精度検証')
+st.text('''
+        ・学習データ: 2022年1月1日 - 2025年10月17日
+        ・検証データ: 2025年10月17日 - 2025年10月24日
+        ・参考: 論文では月間予測において九州地方でMAE 1.936が報告されています。
+        ・https://masahiromae.github.io/pdf/journal/202406_Energies_WangMaeMatsuhashi.pdf
+        ''')
 
 # 03 Load
 APP_DIR = os.path.dirname(os.path.abspath(__file__))

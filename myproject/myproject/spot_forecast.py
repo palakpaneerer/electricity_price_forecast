@@ -1,169 +1,208 @@
 # 01 Import
 import streamlit as st
 import requests
+import numpy as np
 import pandas as pd
-from io import BytesIO
+from datetime import timedelta
 
+from io import BytesIO
 import plotly.express as px
+
+import xgboost as xgb
 
 
 # 02 Page Title
 st.title('スポット市場価格予測')
+st.text('''
+        ・XGBoostで予測を行っています。
+        ・モデルの精度は「予測精度検証」ページでご確認ください。
+        ''')
 
 
-# 03 LightGBM
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from datetime import datetime
-import holidays
-import lightgbm as lgb
-from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
-SEED = 86
+# 03 Extract Data
+dfs = {}
 
-# 04 Extract Data
-url = 'https://www.jepx.jp/_download.php'
-params = {'dir': 'spot_summary', 'file': 'spot_summary_2025.csv'}
-headers = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Referer': 'https://www.jepx.jp/electricpower/market-data/spot/'
-}
-response = requests.post(url, data=params, headers=headers)
-csv_bytes = response.content
-df = pd.read_csv(BytesIO(csv_bytes), encoding='shift_jis')
+years = [2024, 2025]
+for year in years:
+    url = "https://www.jepx.jp/_download.php"
+    params = {'dir': 'spot_summary', 'file': f'spot_summary_{year}.csv'}
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': 'https://www.jepx.jp/electricpower/market-data/spot/'
+    }
 
-# Data Cleaning
-df['受渡日'] = pd.to_datetime(df['受渡日'])
-df['時刻'] = (df['時刻コード'] - 1) * 30
-df['時刻'] = pd.to_timedelta(df['時刻'], unit='m')
-df['受渡日時'] = df['受渡日'] + df['時刻']
+    response = requests.post(url, data=params, headers=headers)
+    response.raise_for_status()
 
-# Feature Engineering
-df['year'] = df['受渡日'].dt.year
-df['quarter'] = df['受渡日'].dt.quarter
-df['month'] = df['受渡日'].dt.month
-df['day_of_week'] = df['受渡日'].dt.day_of_week
-df['week_number'] = df['受渡日'].dt.isocalendar().week
-df['day_of_year'] = df['受渡日'].dt.dayofyear
+    csv_bytes = response.content
+    df = pd.read_csv(BytesIO(csv_bytes), encoding='shift_jis')
 
-# Training
-target = 'エリアプライス東京(円/kWh)'
-select_column = [
-    'year', 'quarter', 'month', '時刻コード', 'day_of_week', 'week_number', 'day_of_year'
-]
+    dfs[year] = df
 
-df_train = df[:-48*7]
-df_val = df_train[-48*7:]
-df_test = df[-48*7:]
+# Merge
+df_all = pd.concat(dfs.values(), ignore_index=True)
 
-X_train = df_train[select_column]
-y_train = df_train[target]
 
-X_val = df_val[select_column]
-y_val = df_val[target]
+# 04 Extend the df dates
+# Check latest date
+last_date = pd.to_datetime(df_all['受渡日'].max())
+last_code = df_all['時刻コード'].max()
 
-X_test = df_test[select_column]
-y_test = df_test[target]
-
-params = {
-    'objective': 'regression',
-    'metric': 'rmse',
-    'n_estimators':20000,
-    'max_depth': -1,
-    'learning_rate': 0.01,
-    'num_leaves': 480,
-    'feature_fraction': 0.25,
-    'random_state': SEED,
-    'verbosity': -1,
-}
-
-model = lgb.LGBMRegressor(**params)
-
-model.fit(
-    X_train, y_train,
-    eval_set = [(X_val, y_val)],
-    eval_metric = 'rmse', 
-    callbacks = [
-        lgb.early_stopping(50000),
-        lgb.log_evaluation(1000)
-    ]
+# Create future times by 30 mins for7 
+future_steps = 48 * 7  # 336
+future_times = pd.date_range(
+    start=last_date + timedelta(days=1),
+    periods=future_steps // 48,
+    freq='D'
 )
 
-# Test - 再学習していない
-y_pred = model.predict(X_test)
+# Create future rows by using combinations between date and timecode
+future_rows = []
+for day in future_times:
+    for code in range(1, 49):  # 1〜48 timecode
+        future_rows.append({
+            '受渡日': day,
+            '時刻コード': code
+        })
 
-mse = mean_squared_error(y_test, y_pred)
-rmse = np.sqrt(mse)
+# Make the future rows DataFrame
+df_future = pd.DataFrame(future_rows)
 
-mae = mean_absolute_error(y_test, y_pred)
+# Add all same coluns from df_all
+for col in df_all.columns:
+    if col not in df_future.columns:
+        df_future[col] = None
 
-st.write(f'Test RMSE: {rmse:.4f}')
-st.write(f'Test MAE: {mae:.4f}')
+df_future = df_future[df_all.columns]
 
-
-# User Can Select Areas
-# area_map = {
-#     '北海道': 'エリアプライス北海道(円/kWh)',
-#     '東北':   'エリアプライス東北(円/kWh)',
-#     '東京':   'エリアプライス東京(円/kWh)',
-#     '中部':   'エリアプライス中部(円/kWh)',
-#     '北陸':   'エリアプライス北陸(円/kWh)',
-#     '関西':   'エリアプライス関西(円/kWh)',
-#     '中国':   'エリアプライス中国(円/kWh)',
-#     '四国':   'エリアプライス四国(円/kWh)',
-#     '九州':   'エリアプライス九州(円/kWh)',
-# }
-
-# options = list(area_map.keys())
+# Merge the dataframes
+df_extended = pd.concat([df_all, df_future], ignore_index=True)
 
 
-# selected = st.multiselect(
-#     'エリアを選択してください',
-#     options,
-#     default=options
-# )
+# 05 Data Cleaning
+df_extended['受渡日'] = pd.to_datetime(df_extended['受渡日'], errors='coerce')
 
-# selected_cols = [area_map[opt] for opt in selected]
-selected_cols='エリアプライス東京(円/kWh)'
-if not selected_cols:
+df_extended['受渡日'] = pd.to_datetime(df_extended['受渡日'])
+df_extended['時刻'] = (df_extended['時刻コード'] - 1) * 30
+df_extended['時刻'] = pd.to_timedelta(df_extended['時刻'], unit='m')
+df_extended['受渡日時'] = df_extended['受渡日'] + df_extended['時刻']
+
+
+# 06 Feature Engineering
+# Date features
+df_extended['year'] = df_extended['受渡日'].dt.year
+df_extended['month'] = df_extended['受渡日'].dt.month
+df_extended['day_of_week'] = df_extended['受渡日'].dt.day_of_week
+df_extended['day_of_year'] = df_extended['受渡日'].dt.dayofyear
+
+target_cols = [
+    'エリアプライス北海道(円/kWh)',
+    'エリアプライス東北(円/kWh)',
+    'エリアプライス東京(円/kWh)',
+    'エリアプライス中部(円/kWh)',
+    'エリアプライス北陸(円/kWh)',
+    'エリアプライス関西(円/kWh)',
+    'エリアプライス中国(円/kWh)',
+    'エリアプライス四国(円/kWh)',
+    'エリアプライス九州(円/kWh)',
+]
+for target in target_cols:
+    df_extended[f'{target}_lag336'] = df_extended[target].shift(336)
+    df_extended[f'{target}_r336'] = df_extended[target].rolling(336).mean()
+    
+    
+# Cyclical encoding for periodic features
+df_extended['month_sin'] = np.sin(2*np.pi*(df_extended['month']-1)/12)
+df_extended['month_cos'] = np.cos(2*np.pi*(df_extended['month']-1)/12)
+
+df_extended['dow_sin'] = np.sin(2*np.pi*df_extended['day_of_week']/7)
+df_extended['dow_cos'] = np.cos(2*np.pi*df_extended['day_of_week']/7)
+
+df_extended['days_in_year'] = np.where(df_extended['受渡日'].dt.is_leap_year, 366, 365)
+df_extended['frac_of_year'] = (df_extended['day_of_year'] - 1) / df_extended['days_in_year']
+df_extended['doy_sin'] = np.sin(2 * np.pi * df_extended['frac_of_year'])
+df_extended['doy_cos'] = np.cos(2 * np.pi * df_extended['frac_of_year'])
+
+df_extended['tod_sin'] = np.sin(2*np.pi*df_extended['時刻コード']/48)
+df_extended['tod_cos'] = np.cos(2*np.pi*df_extended['時刻コード']/48)
+
+
+# 07 Keep only the latest 2 weeks (48 slots/day × 14 days = 672 rows)
+df_extended = df_extended.tail(48 * 14).reset_index(drop=True)
+
+
+# 08 User Can Select Areas
+area_map = {
+    '北海道': 'エリアプライス北海道(円/kWh)',
+    '東北':   'エリアプライス東北(円/kWh)',
+    '東京':   'エリアプライス東京(円/kWh)',
+    '中部':   'エリアプライス中部(円/kWh)',
+    '北陸':   'エリアプライス北陸(円/kWh)',
+    '関西':   'エリアプライス関西(円/kWh)',
+    '中国':   'エリアプライス中国(円/kWh)',
+    '四国':   'エリアプライス四国(円/kWh)',
+    '九州':   'エリアプライス九州(円/kWh)',
+}
+
+options = list(area_map.keys())
+
+selected = st.multiselect(
+    'エリアを選択してください',
+    options,
+    default='東京'
+)
+
+selected_cols = [area_map[opt] for opt in selected]
+
+
+df_all_pred = pd.DataFrame({"受渡日時": df_extended["受渡日時"]})
+if not selected:
     st.warning("エリアを1つ以上選択してください。")
 else:
-    # Show only selected areas
-    fig = px.line(
-        df,
-        x='受渡日時',
-        y=selected_cols,
-        labels={'受渡日時': '受渡日時', 'value': '価格(円/kWh)', 'variable': 'エリア'},
-        title="選択されたエリアのスポット価格"
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    plot_cols = []
+    for area in selected:
+        # A. Prediction
+        # Access the model
+        model_path = f"models/models_XGBoost/xgboost_{area}.json"
+        model = xgb.Booster()
+        model.load_model(model_path)
 
 
+        # B Use the same features as the trained model
+        target_col = f"エリアプライス{area}(円/kWh)"
+        feature_cols = [
+            'year', 'month_sin', 'month_cos', 'dow_sin', 'dow_cos',
+            'doy_sin', 'doy_cos', 'tod_sin', 'tod_cos',
+            f'{target_col}_lag336', f'{target_col}_r336'
+        ]
+
+        X_input = df_extended[feature_cols].copy()
+        dtest = xgb.DMatrix(X_input)
 
 
+        # C Predict
+        y_pred = model.predict(dtest)
 
-plot_df = df_test[['受渡日時', target]].reset_index(drop=True).copy()
-plot_df['予測値'] = y_pred
+        
+        # D Save the prediction and actual price
+        pred_col_name = f'{area}_予測値'
+        actual_col_name = f'{area}_実測値'
 
-st.write(plot_df)
+        df_all_pred[pred_col_name] = y_pred
+        df_all_pred[actual_col_name] = df_extended[target_col].values
 
-
-# ロング形式に変換（系列: 実測 or 予測, 価格: 値）
-long_df = plot_df.melt(
-    id_vars='受渡日時',
-    value_vars=[target, '予測値'],
-    var_name='系列',
-    value_name='価格(円/kWh)'
-)
-
-# 可視化
-fig_pred = px.line(
-    long_df,
+        
+        # E Add cols that I want to show in the line graph
+        plot_cols.append(actual_col_name)
+        plot_cols.append(pred_col_name)
+    
+    
+    
+# Show only selected areas for graph
+fig = px.line(
+    df_all_pred,
     x='受渡日時',
-    y='価格(円/kWh)',
-    color='系列',
-    title='実測 vs 予測（テスト期間）'
+    y=plot_cols,
+    labels={'受渡日時': '受渡日時', 'value': '価格(円/kWh)', 'variable': 'エリア'}
 )
-st.plotly_chart(fig_pred, use_container_width=True)
-# st.table(df.head(10))
+st.plotly_chart(fig, use_container_width=True)
