@@ -67,12 +67,22 @@ selected_cols = [area_map[opt] for opt in selected]
 if not selected_cols:
     st.warning("エリアを1つ以上選択してください。")
 else:
-    # Show only selected areas
+    # Get the average price
+    df7_avg_spike = pd.DataFrame()
+    df7_avg_spike['平均価格'] = df7[selected_cols].mean()
+    
+    # Get the number of spike
+    threshold = 30
+    df7_avg_spike['30円/kWh以上の回数'] = (df7[selected_cols] > threshold).sum()
+    
+    # Show average price and number of spike
+    st.table(df7_avg_spike)
+    
+    # Show only selected areas for graph
     fig = px.line(
         df7,
         x='受渡日時',
         y=selected_cols,
-        labels={'受渡日時': '受渡日時', 'value': '価格(円/kWh)', 'variable': 'エリア'},
-        title="選択されたエリアのスポット価格"
+        labels={'受渡日時': '受渡日時', 'value': '価格(円/kWh)', 'variable': 'エリア'}
     )
     st.plotly_chart(fig, use_container_width=True)
