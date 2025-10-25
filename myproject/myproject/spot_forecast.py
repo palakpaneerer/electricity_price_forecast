@@ -8,7 +8,7 @@ import plotly.express as px
 
 
 # 02 Page Title
-st.title('予測精度検証')
+st.title('スポット市場価格予測')
 
 
 # 03 LightGBM

@@ -10,7 +10,7 @@ import plotly.express as px
 
 
 # 02 Page Title
-st.title('スポット市場直近データ')
+st.title('スポット市場直近7日間データ')
 
 
 # 03 Extract Data
