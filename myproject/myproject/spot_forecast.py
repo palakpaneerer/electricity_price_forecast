@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from datetime import timedelta
 
+import os
+
 from io import BytesIO
 import plotly.express as px
 
@@ -163,7 +165,8 @@ else:
     for area in selected:
         # A. Prediction
         # Access the model
-        model_path = f"models/models_XGBoost/xgboost_{area}.json"
+        APP_DIR = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(APP_DIR, f"models/models_XGBoost/xgboost_{area}.json")
         model = xgb.Booster()
         model.load_model(model_path)
 
